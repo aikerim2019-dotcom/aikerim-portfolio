@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 const config=JSON.parse(await fs.readFile('site.config.json','utf8'));
 const meta=JSON.parse(await fs.readFile('documents.meta.json','utf8'));
 const items=JSON.parse(await fs.readFile('items.config.json','utf8'));
-const sections={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
+const sections={learning:'Студенттің оқу қоржыны',home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
 const cats={certificates:'Сертификаттар',awards:'Марапаттар',materials:'Әдістемелік материалдар',articles:'Ғылыми мақалалар',students:'Студенттер жетістіктері',other:'Басқа құжаттар'};
 const legacySections={certificates:'about',awards:'achievements',materials:'materials',articles:'materials',students:'students',other:'documents'};
 const types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'};
