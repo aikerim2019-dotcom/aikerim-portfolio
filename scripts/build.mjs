@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
+import {cardMarkup} from '../src/cards.mjs';
 const config=JSON.parse(await fs.readFile('site.config.json','utf8'));
 const meta=JSON.parse(await fs.readFile('documents.meta.json','utf8'));
 const items=JSON.parse(await fs.readFile('items.config.json','utf8'));
@@ -26,11 +27,12 @@ async function walk(dir){
 }
 await walk('documents');
 documents.sort((a,b)=>b.year.localeCompare(a.year)||a.title.localeCompare(b.title));
-const names=['index.html','admin.js','library.js','items.js'];
+const names=['index.html','admin.js','library.js','items.js','cards.mjs','contact.js'];
 const sources=await Promise.all(names.map(name=>fs.readFile('src/'+name,'utf8')));
-const version=createHash('sha256').update(JSON.stringify({documents,config})+sources.join('')).digest('hex').slice(0,12);
+sources[0]=sources[0].replace(/<!--CUSTOM_CARDS:([a-z]+)-->/g,(_,section)=>Object.entries(items).filter(([id,card])=>card.custom&&card.section===section).map(([id,card])=>cardMarkup(id,card)).join(''));
+const version=createHash('sha256').update(JSON.stringify({documents,config,items})+sources.join('')).digest('hex').slice(0,12);
 for(const doc of documents)doc.href+='?v='+doc.fileVersion;
-for(let i=0;i<names.length;i++){let text=sources[i];for(const asset of ['admin.js','library.js','items.js','documents.json','config.json'])text=text.replaceAll('./'+asset,'./'+asset+'?v='+version);await fs.writeFile('public/'+names[i],text);}
+for(let i=0;i<names.length;i++){let text=sources[i];for(const asset of ['admin.js','library.js','items.js','cards.mjs','contact.js','documents.json','config.json'])text=text.replaceAll('./'+asset,'./'+asset+'?v='+version);await fs.writeFile('public/'+names[i],text);}
 await fs.writeFile('public/documents.json',JSON.stringify({documents}));
 await fs.writeFile('public/config.json',JSON.stringify(config));
 await fs.writeFile('public/.nojekyll','');
