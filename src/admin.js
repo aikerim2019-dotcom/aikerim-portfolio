@@ -3,7 +3,7 @@
  const $=s=>document.querySelector(s),types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'};
  let token='',config=null,records=[],itemMap={},metadata={},pendingAction=null,uploadItem=null,uploadKind='files',uploadBusy=false,deleteBusy=false,deleteDoc=null,live=false,cardBusy=false,newCardSection=null;
  const fileCache=new Map();
- let ownerLogin='',accessBusy=false,personalBusy=false,sessionVersion=0,repositoryPrivate=false;
+ let ownerLogin='',accessBusy=false,personalBusy=false,sessionVersion=0;
  const vaultKey='portfolio-personal-vault:v1:'+location.pathname.replace(/\/+$/,'');
  function loadVault(){try{const raw=localStorage.getItem(vaultKey);return raw&&raw.length<15000?JSON.parse(raw):null;}catch{return null;}}
  function saveVault(record){try{localStorage.setItem(vaultKey,JSON.stringify(record));}catch{throw Error('Браузер сақтауға рұқсат бермеді. Баптауын тексеріңіз.');}}
@@ -13,9 +13,9 @@
 
 
  const ownerConnected=()=>!!token&&!!ownerLogin;
- function publicRecord(doc){const {id,title,description,year,name,item,itemTitle,section,sectionTitle,category,size,type,storage}=doc;return {id,title,description,year,name,item,itemTitle,section,sectionTitle,category,size,type,...(storage?{storage}:{})};}
- function hidePrivateContent(){sessionVersion++;ownerLogin='';repositoryPrivate=false;for(const url of fileCache.values())URL.revokeObjectURL(url);fileCache.clear();records=(live?records:window.getPortfolioDocuments?.()||records).map(publicRecord);live=false;const viewer=$('#doc-viewer');if(viewer?.open)viewer.close();$('#doc-view-body')?.replaceChildren();for(const id of ['doc-open-tab','doc-download'])$('#'+id)?.removeAttribute('href');if(window.setPortfolioDocuments)window.setPortfolioDocuments(records);}
- function requireOwner(){if(!ownerConnected())throw Error('Файлдарды ашу тек портфолио иесіне қолжетімді. Басқаруға кіріңіз.');}
+ function publicRecord(doc){const published=window.getPublishedPortfolioDocuments?.().find(d=>d.id===doc.id);if(published)return published;const {id,title,description,year,name,item,itemTitle,section,sectionTitle,category,size,type,storage}=doc;return {id,title,description,year,name,item,itemTitle,section,sectionTitle,category,size,type,...(storage?{storage}:{})};}
+ function hidePrivateContent(){sessionVersion++;ownerLogin='';for(const url of fileCache.values())URL.revokeObjectURL(url);fileCache.clear();records=(live?records:window.getPortfolioDocuments?.()||records).map(publicRecord);live=false;const viewer=$('#doc-viewer');if(viewer?.open)viewer.close();$('#doc-view-body')?.replaceChildren();for(const id of ['doc-open-tab','doc-download'])$('#'+id)?.removeAttribute('href');if(window.setPortfolioDocuments)window.setPortfolioDocuments(records);}
+ function requireOwner(){if(!ownerConnected())throw Error('Бұл басқару әрекеті үшін өз аккаунтыңызбен кіріңіз.');}
  const text=(id,message)=>{$(id).textContent=message;};
  const report=message=>text('#admin-global-message',message);
  const from64=value=>new TextDecoder().decode(Uint8Array.from(atob(value.replace(/\s/g,'')),c=>c.charCodeAt(0)));
@@ -23,7 +23,7 @@
  const encodePath=value=>value.split('/').map(encodeURIComponent).join('/');
  function validPath(id){if(typeof id!=='string'||id.split('/').some(p=>!p||p==='.'||p==='..')||/[\\\x00-\x1f]/.test(id))throw Error('Файл жолы жарамсыз.');return 'documents/'+id;}
  async function settings(){if(!config){const r=await fetch('./config.json');if(!r.ok)throw Error('Сайт баптауы ашылмады.');config=await r.json();if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository||''))throw Error('Сайт баптауы жарамсыз.');}return config;}
- function connectionUI(login=''){if(!token)hidePrivateContent();else if(login)ownerLogin=login;document.documentElement.dataset.owner=ownerConnected()?'true':'false';text('#admin-privacy-status',ownerConnected()&&!repositoryPrivate?'Назар аударыңыз: GitHub қоймасы әлі ашық. Бұл бетте файлдар жасырылған, бірақ тікелей GitHub сілтемелерін жабу үшін жеке қойма қажет.':'');$('#admin-privacy-status').hidden=!ownerConnected()||repositoryPrivate;$('#admin-login-button').hidden=!!token;$('#admin-logout-button').hidden=!token;$('#admin-refresh-button').hidden=!token;$('#personal-settings-button').hidden=!token||!ownerLogin;$('#admin-logout-button').disabled=uploadBusy||deleteBusy||cardBusy;text('#admin-connection-status',token?'Басқару қосулы: '+ownerLogin:'Файлдарды қосу немесе жою үшін басқаруға кіріңіз.');personalUI();}
+ function connectionUI(login=''){if(!token)hidePrivateContent();else if(login)ownerLogin=login;document.documentElement.dataset.owner=ownerConnected()?'true':'false';$('#admin-login-button').hidden=!!token;$('#admin-logout-button').hidden=!token;$('#admin-refresh-button').hidden=!token;$('#personal-settings-button').hidden=!token||!ownerLogin;$('#admin-logout-button').disabled=uploadBusy||deleteBusy||cardBusy;text('#admin-connection-status',token?'Басқару қосулы: '+ownerLogin:'Файлдарды қосу немесе жою үшін басқаруға кіріңіз.');personalUI();}
  async function api(path,options={}){
   if(!path.startsWith('/'))throw Error('Сұрау жолы жарамсыз.');
   const requestToken=token;const headers={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(token?{Authorization:'Bearer '+token}:{}),...(options.body?{'Content-Type':'application/json'}:{})};
@@ -73,7 +73,7 @@
    const url=await fileUrl(doc),a=document.createElement('a');a.href=url;a.download=doc.name;document.body.append(a);a.click();a.remove();report('«'+doc.name+'» файлын жүктеу басталды.');
   }catch(e){if(writable)try{await writable.abort();}catch{}if(e.name!=='AbortError')report(e.message);}
  }
- async function authorize(candidate){await settings();token=candidate;const [user,repo]=await Promise.all([api('/user'),api(repoPath())]);if(user.login.toLowerCase()!==config.repository.split('/')[0].toLowerCase()||repo.permissions?.push!==true)throw Error('Бұл аккаунтқа портфолионы басқаруға рұқсат жоқ.');ownerLogin=user.login;repositoryPrivate=repo.private===true;sessionVersion++;await snapshot();connectionUI(user.login);}
+ async function authorize(candidate){await settings();token=candidate;const [user,repo]=await Promise.all([api('/user'),api(repoPath())]);if(user.login.toLowerCase()!==config.repository.split('/')[0].toLowerCase()||repo.permissions?.push!==true)throw Error('Бұл аккаунтқа портфолионы басқаруға рұқсат жоқ.');ownerLogin=user.login;sessionVersion++;await snapshot();connectionUI(user.login);}
  function finishLogin(){$('#admin-access-dialog').close();report('Басқару қосылды. Құжаттарды осы беттен қосып, жоя аласыз.');const action=pendingAction;pendingAction=null;action?.();}
  function accessLock(busy){accessBusy=busy;for(const id of ['admin-connect-submit','admin-access-close','personal-login-submit','personal-login-close','personal-forgot-button'])$('#'+id).disabled=busy;}
  $('#admin-login-button').onclick=()=>requireAccess(()=>{});
@@ -121,7 +121,6 @@
   uploadBusy=true;$('#admin-upload-submit').disabled=true;$('#admin-upload-close').disabled=true;$('#admin-logout-button').disabled=true;text('#admin-upload-message','Файлдар дайындалуда…');
   let saved=false;const pendingCacheKeys=[];
   try{
-   const privacy=await api(repoPath());if(privacy.private!==true)throw Error('Қойма әлі ашық болғандықтан, жаңа файлды қауіпсіз сақтау мүмкін емес. Алдымен жеке файл қоймасын байланыстыру қажет.');
    const base=repoPath(),ref=await api(base+'/git/ref/heads/'+encodeURIComponent(config.branch)),commit=await api(base+'/git/commits/'+ref.object.sha),tree=await api(base+'/git/trees/'+commit.tree.sha+'?recursive=1');if(tree.truncated)throw Error('Жоба файлдарының тізімі толық емес.');
    const storage=await storageModule();const occupied=tree.tree.filter(x=>x.type==='blob'&&(x.path.startsWith('documents/')||x.path.startsWith('file-parts/'))).reduce((n,x)=>n+(x.size||0),0);if(occupied+selected.reduce((n,f)=>n+f.size,0)+1024*1024>storage.SITE_BYTES)throw Error('Сайттағы файлдарға арналған орын жеткіліксіз. Қажет емес ірі файлдарды жойып, қайта көріңіз.');
    const used=new Set(tree.tree.map(x=>x.path)),changes=[],newDocs=[];
@@ -133,7 +132,7 @@
     }else{const blob=await api(base+'/git/blobs',{method:'POST',body:JSON.stringify({content:to64(await file.arrayBuffer()),encoding:'base64'})});changes.push({path,mode:'100644',type:'blob',sha:blob.sha});const doc=descriptor(path,blob.sha,file.size);newDocs.push(doc);fileCache.set(doc.id+':'+doc.sha,URL.createObjectURL(new Blob([file],{type:doc.type})));pendingCacheKeys.push(doc.id+':'+doc.sha);}
    }
    const updated=await api(base+'/git/trees',{method:'POST',body:JSON.stringify({base_tree:commit.tree.sha,tree:changes})}),next=await api(base+'/git/commits',{method:'POST',body:JSON.stringify({message:'Add '+selected.length+' portfolio files to '+uploadItem,tree:updated.sha,parents:[ref.object.sha]})});
-   await api(base+'/git/refs/heads/'+encodeURIComponent(config.branch),{method:'PATCH',body:JSON.stringify({sha:next.sha,force:false})});saved=true;publish([...records,...newDocs]);$('#admin-upload-dialog').close();report(selected.length+' файл сақталды және осы ұяшықта көрсетілді. Келушілерге тек атаулары көрсетіледі.');
+   await api(base+'/git/refs/heads/'+encodeURIComponent(config.branch),{method:'PATCH',body:JSON.stringify({sha:next.sha,force:false})});saved=true;publish([...records,...newDocs]);$('#admin-upload-dialog').close();report(selected.length+' файл сақталды және осы ұяшықта көрсетілді. Келушілер сайт жаңартылғаннан кейін материалдарды көре алады.');
   }catch(e){text('#admin-upload-message',saved?'Файлдар сақталды. Тізімді жаңартыңыз.':e.message);}
   finally{if(!saved)for(const key of pendingCacheKeys){URL.revokeObjectURL(fileCache.get(key));fileCache.delete(key);}uploadBusy=false;$('#admin-upload-submit').disabled=false;$('#admin-upload-close').disabled=false;$('#admin-logout-button').disabled=false;}
  };

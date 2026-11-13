@@ -1,29 +1,45 @@
 (()=>{
- let docs=[];const $=s=>document.querySelector(s),status=$('#doc-status');
+ let docs=[],published=[],preview=null,viewVersion=0;const publicUrls=new Map(),$=s=>document.querySelector(s),status=$('#doc-status');
  const make=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
  const show=(message,error=false)=>{status.textContent=message;status.classList.toggle('error',error);};
- function privateImage(image,doc){window.PortfolioAdmin.fileUrl(doc).then(url=>{if(window.PortfolioAdmin.connected&&image.isConnected)image.src=url;}).catch(()=>{image.hidden=true;});}
+ const catalogReady=fetch('./documents.json').then(async r=>{if(!r.ok)throw Error();published=(await r.json()).documents;return published;});
+ function catalogDoc(doc){return published.find(d=>d.id===doc.id);}
+ async function previewUrl(doc){
+  await catalogReady;const entry=catalogDoc(doc);if(!entry)throw Error('Бұл материалдың көрінісі сайт жаңартылғаннан кейін дайын болады.');
+  if(entry.preview)return new URL(entry.preview,location.href).href;
+  if(entry.storage!=='chunked'){if(!entry.href)throw Error('Көрініс әзірге дайын емес.');return new URL(entry.href,location.href).href;}
+  if(publicUrls.has(entry.id))return publicUrls.get(entry.id);if(!window.PortfolioLargeFiles)await import(document.querySelector('script[src*="large-files.mjs"]').src);
+  const blob=await window.PortfolioLargeFiles.assemble(entry,async part=>{const response=await fetch(part.href);if(!response.ok)throw Error('Файл бөлігі ашылмады.');return response.arrayBuffer();},percent=>document.dispatchEvent(new CustomEvent('portfolio-file-progress',{detail:{id:entry.id,message:'Көрініс дайындалуда: '+percent+'%'}}))),url=URL.createObjectURL(blob);publicUrls.set(entry.id,url);return url;
+ }
+ function imageSource(image,doc){const request=String((Number(image.dataset.imageRequest)||0)+1);image.dataset.imageRequest=request;const owner=window.PortfolioAdmin.connected;(owner?window.PortfolioAdmin.fileUrl(doc):previewUrl(doc)).then(url=>{if(image.isConnected&&image.dataset.imageRequest===request){image.src=url;image.hidden=false;}}).catch(()=>{if(image.dataset.imageRequest===request)image.hidden=true;});}
  function render(){
-  const list=$('#doc-list');list.replaceChildren();const q=$('#doc-search').value.toLocaleLowerCase(),category=$('#doc-filter').value;
+  const list=$('#doc-list');list.replaceChildren();const owner=window.PortfolioAdmin.connected,q=$('#doc-search').value.toLocaleLowerCase(),category=$('#doc-filter').value;
   const filtered=docs.filter(d=>(!category||d.category===category)&&[d.title,d.description,d.name,d.year,d.sectionTitle,d.itemTitle].join(' ').toLocaleLowerCase().includes(q));
   for(const d of filtered){const card=make('article','doc-card'),top=make('div','doc-card-top');card.dataset.fileId=d.id;top.append(make('span','doc-tag',d.category),make('span','doc-file-type',d.name.split('.').pop().toUpperCase()));card.append(top,make('h3','',d.title),make('p','',d.description||d.name),make('p','',(d.year?d.year+' · ':'')+(d.size/1024/1024).toFixed(2)+' МБ'));
-   if(!window.PortfolioAdmin.connected){card.append(make('p','file-locked-note','Бұл бетте тек атауы көрсетіледі.'));list.append(card);continue;}
    const details=make('details','archive-details'),summary=make('summary','archive-summary','Толығырақ');details.append(summary);
-   if(d.type.startsWith('image/')&&d.storage!=='chunked'){const photo=make('img','library-photo');privateImage(photo,d);photo.alt=d.title;photo.loading='lazy';details.append(photo);}
-   const actions=make('div','doc-actions'),open=make('button','doc-btn','Ашу'),download=make('a','doc-btn doc-secondary','Жүктеп алу'),del=make('button','doc-btn doc-danger','Жою');open.type=del.type='button';open.onclick=()=>view(d);download.href='#';download.download=d.name;download.onclick=e=>window.PortfolioAdmin.download(d,e);del.setAttribute('aria-label',d.name+' файлын жою');del.onclick=()=>window.requestPortfolioDelete(d);actions.append(open,download,del);details.append(actions,make('p','file-progress'));card.append(details);card.addEventListener('click',event=>{if(event.defaultPrevented||event.target.closest('a,button,input,details,summary')||window.getSelection()?.toString())return;details.open=!details.open;});list.append(card);
+   if(d.type.startsWith('image/')&&d.storage!=='chunked'){const photo=make('img','library-photo');imageSource(photo,d);photo.alt=d.title;photo.loading='lazy';details.append(photo);}
+   const actions=make('div','doc-actions'),open=make('button','doc-btn','Көру');open.type='button';open.onclick=()=>view(d);actions.append(open);
+   if(owner){const download=make('a','doc-btn doc-secondary','Жүктеп алу'),del=make('button','doc-btn doc-danger','Жою');del.type='button';download.href='#';download.download=d.name;download.onclick=e=>window.PortfolioAdmin.download(d,e);del.setAttribute('aria-label',d.name+' файлын жою');del.onclick=()=>window.requestPortfolioDelete(d);actions.append(download,del);}
+   details.append(actions,make('p','file-progress'));card.append(details);card.addEventListener('click',event=>{if(event.defaultPrevented||event.target.closest('a,button,input,details,summary')||window.getSelection()?.toString())return;details.open=!details.open;});list.append(card);
   }show(filtered.length?filtered.length+' құжат табылды.':'Құжат табылмады.');
  }
  async function view(d){
-  try{if(!window.PortfolioAdmin.connected)throw Error('Файлдарды ашу тек портфолио иесіне қолжетімді.');const large=d.storage==='chunked'&&d.size>80*1024*1024,url=large?null:await window.PortfolioAdmin.fileUrl(d);if(!window.PortfolioAdmin.connected)throw Error('Басқару сеансы аяқталды.');$('#doc-view-title').textContent=d.title;const body=$('#doc-view-body');body.replaceChildren();
-   if(large){body.append(make('p','doc-notice','Бұл ірі файл ('+(d.size/1024/1024).toFixed(1)+' МБ). Оны «Жүктеп алу» батырмасымен құрылғыңызға сақтап ашыңыз.'));}else if(d.type==='application/pdf'){const frame=make('iframe');frame.title=d.title;frame.src=url;body.append(frame);}else if(d.type.startsWith('image/')){const img=make('img');img.alt=d.title;img.src=url;body.append(img);}else body.append(make('p','doc-notice','Бұл файлды жүктеп алып, Word немесе PowerPoint бағдарламасында аша аласыз.'));
-   $('#doc-open-tab').hidden=large;$('#doc-open-tab').href=url||'#';$('#doc-download').href=url||'#';$('#doc-download').download=d.name;$('#doc-download').onclick=e=>window.PortfolioAdmin.download(d,e);$('#doc-delete').onclick=()=>window.requestPortfolioDelete(d);$('#doc-viewer').showModal();
-  }catch(e){show(e.message,true);}
+  const version=++viewVersion,owner=window.PortfolioAdmin.connected;preview?.dispose();preview=null;$('#doc-view-body').replaceChildren();$('#doc-view-title').textContent=d.title;
+  for(const id of ['doc-open-tab','doc-download','doc-delete']){$('#'+id).hidden=!owner;$('#'+id).removeAttribute('href');$('#'+id).onclick=null;}$('#doc-open-tab').hidden=true;if(owner){$('#doc-download').href='#';$('#doc-download').download=d.name;$('#doc-download').onclick=e=>window.PortfolioAdmin.download(d,e);$('#doc-delete').onclick=()=>window.requestPortfolioDelete(d);}
+  if(!$('#doc-viewer').open)$('#doc-viewer').showModal();
+  const notice=make('p','portfolio-preview-status','Құжат ашылуда…');$('#doc-view-body').append(notice);
+  try{
+   const publicEntry=catalogDoc(d),isOffice=/\.(docx?|pptx?)$/i.test(d.name),url=owner&&!isOffice?await window.PortfolioAdmin.fileUrl(d):await previewUrl(d);if(version!==viewVersion||!$('#doc-viewer').open)return;
+   if(!window.PortfolioPreview)await import(document.querySelector('script[src*="preview.mjs"]').src);if(version!==viewVersion||!$('#doc-viewer').open)return;
+   preview=window.PortfolioPreview.create($('#doc-view-body'));preview.open(url,isOffice&&publicEntry?.preview?'application/pdf':d.type);
+   if(owner&&window.PortfolioAdmin.connected){$('#doc-open-tab').hidden=false;$('#doc-open-tab').href=url;$('#doc-download').href='#';$('#doc-download').download=d.name;$('#doc-download').onclick=e=>window.PortfolioAdmin.download(d,e);$('#doc-delete').onclick=()=>window.requestPortfolioDelete(d);}
+  }catch(e){if(version===viewVersion){notice.textContent=e.message;show(e.message,true);}}
  }
  document.addEventListener('portfolio-file-progress',event=>{for(const row of document.querySelectorAll('[data-file-id="'+CSS.escape(event.detail.id)+'"]')){const target=row.querySelector('.file-progress');if(target)target.textContent=event.detail.message;}});
- window.requestPortfolioDelete=doc=>window.PortfolioAdmin.remove(doc);
- window.openPortfolioDocument=view;
- window.getPortfolioDocuments=()=>docs.slice();
+ window.requestPortfolioDelete=doc=>window.PortfolioAdmin.remove(doc);window.openPortfolioDocument=view;
+ window.getPortfolioDocuments=()=>docs.slice();window.getPublishedPortfolioDocuments=()=>published.slice();window.portfolioPreviewUrl=previewUrl;window.portfolioImageSource=imageSource;
  window.setPortfolioDocuments=next=>{docs=next;render();document.dispatchEvent(new CustomEvent('portfolio-documents-changed',{detail:docs}));};
- $('#doc-search').oninput=render;$('#doc-filter').onchange=render;$('#doc-close').onclick=()=>$('#doc-viewer').close();$('#doc-viewer').addEventListener('close',()=>$('#doc-view-body').replaceChildren());
- (async()=>{try{const r=await fetch('./documents.json');if(!r.ok)throw Error();const data=await r.json();if(!window.PortfolioAdmin.hasLiveData)window.setPortfolioDocuments(data.documents);}catch{show('Құжаттар тізімі ашылмады. Бетті жаңартып көріңіз.',true);}})();
+ $('#doc-search').oninput=render;$('#doc-filter').onchange=render;$('#doc-close').onclick=()=>$('#doc-viewer').close();$('#doc-viewer').addEventListener('close',()=>{if($('#doc-viewer').open)return;viewVersion++;preview?.dispose();preview=null;$('#doc-view-body').replaceChildren();});
+ catalogReady.then(data=>{if(!window.PortfolioAdmin.hasLiveData)window.setPortfolioDocuments(data);}).catch(()=>show('Құжаттар тізімі ашылмады. Бетті жаңартып көріңіз.',true));
+ window.addEventListener('beforeunload',()=>{preview?.dispose();for(const url of publicUrls.values())URL.revokeObjectURL(url);});
 })();
