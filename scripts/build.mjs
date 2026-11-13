@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {cardMarkup} from '../src/cards.mjs';
+import {normalizeManifest,MANIFEST_SUFFIX,SITE_BYTES} from '../src/large-files.mjs';
 const config=JSON.parse(await fs.readFile('site.config.json','utf8'));
 const meta=JSON.parse(await fs.readFile('documents.meta.json','utf8'));
 const items=JSON.parse(await fs.readFile('items.config.json','utf8'));
@@ -12,27 +13,37 @@ const types={pdf:'application/pdf',doc:'application/msword',docx:'application/vn
 await fs.rm('public',{recursive:true,force:true});
 await fs.mkdir('public',{recursive:true});
 const documents=[];
+function describe(rel,name,size,type,extra={}){
+ const parts=rel.split('/'),m=meta[rel]||{},item=parts[0]==='items'&&items[parts[1]]?parts[1]:items[m.item]?m.item:null,section=item?items[item].section:parts[0]==='sections'&&sections[parts[1]]?parts[1]:legacySections[parts[0]]||'documents';
+ return {id:rel,title:m.title||name.replace(/\.[^.]+$/,'').replaceAll('_',' '),description:m.description||'',year:m.year||name.match(/(?:19|20)\d{2}/)?.[0]||'',item,itemTitle:item?items[item].title:'',section,sectionTitle:sections[section],category:cats[parts[0]]||(type.startsWith('image/')?'Фотосуреттер':'Басқа құжаттар'),name,size,type,...extra};
+}
+let publishedBytes=0;const copiedParts=new Set();
 async function walk(dir){
  for(const e of await fs.readdir(dir,{withFileTypes:true})){
-  const p=path.join(dir,e.name);
-  if(e.isDirectory()){await walk(p);continue;}
-  const ext=e.name.split('.').pop().toLowerCase();if(!types[ext])continue;
-  const rel=path.relative('documents',p).split(path.sep).join('/'),parts=rel.split('/');
-  const m=meta[rel]||{},stat=await fs.stat(p),fileVersion=createHash('sha256').update(await fs.readFile(p)).digest('hex').slice(0,12);
-  const item=parts[0]==='items'&&items[parts[1]]?parts[1]:items[m.item]?m.item:null;
-  const section=item?items[item].section:parts[0]==='sections'&&sections[parts[1]]?parts[1]:legacySections[parts[0]]||'documents';
-  documents.push({id:rel,title:m.title||e.name.replace(/\.[^.]+$/,'').replaceAll('_',' '),description:m.description||'',year:m.year||e.name.match(/(?:19|20)\d{2}/)?.[0]||'',item,itemTitle:item?items[item].title:'',section,sectionTitle:sections[section],category:cats[parts[0]]||(types[ext].startsWith('image/')?'Фотосуреттер':'Басқа құжаттар'),name:e.name,size:stat.size,fileVersion,type:types[ext],href:'./documents/'+parts.map(encodeURIComponent).join('/')});
-  const target=path.join('public','documents',...parts);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(p,target);
+  const p=path.join(dir,e.name);if(e.isDirectory()){await walk(p);continue;}
+  const rel=path.relative('documents',p).split(path.sep).join('/');
+  if(e.name.endsWith(MANIFEST_SUFFIX)){
+   const raw=await fs.readFile(p),manifest=normalizeManifest(JSON.parse(raw)),fileVersion=createHash('sha256').update(raw).digest('hex').slice(0,12),parts=[];
+   for(const part of manifest.parts){
+    if(!copiedParts.has(part.path)){const bytes=await fs.readFile(part.path);if(bytes.length!==part.size||createHash('sha256').update(bytes).digest('hex')!==part.sha256)throw Error('Large file integrity check failed: '+part.path);const target=path.join('public',part.path);await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(part.path,target);publishedBytes+=part.size;copiedParts.add(part.path);}
+    parts.push({...part,href:'./'+part.path+'?v='+part.sha256.slice(0,12)});
+   }
+   documents.push(describe(rel,manifest.name,manifest.size,manifest.type,{storage:'chunked',fileVersion,parts,href:'#'}));continue;
+  }
+  const ext=e.name.split('.').pop().toLowerCase();if(!types[ext])continue;const stat=await fs.stat(p),fileVersion=createHash('sha256').update(await fs.readFile(p)).digest('hex').slice(0,12);
+  documents.push(describe(rel,e.name,stat.size,types[ext],{fileVersion,href:'./documents/'+rel.split('/').map(encodeURIComponent).join('/')}));
+  const target=path.join('public','documents',...rel.split('/'));await fs.mkdir(path.dirname(target),{recursive:true});await fs.copyFile(p,target);publishedBytes+=stat.size;
  }
 }
 await walk('documents');
+if(publishedBytes>SITE_BYTES)throw Error('Site file storage capacity exceeded.');
 documents.sort((a,b)=>b.year.localeCompare(a.year)||a.title.localeCompare(b.title));
-const names=['index.html','navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js'];
+const names=['index.html','navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','large-files.mjs'];
 const sources=await Promise.all(names.map(name=>fs.readFile('src/'+name,'utf8')));
 sources[0]=sources[0].replace(/<!--CUSTOM_CARDS:([a-z]+)-->/g,(_,section)=>Object.entries(items).filter(([id,card])=>card.custom&&card.section===section).map(([id,card])=>cardMarkup(id,card)).join(''));
 const version=createHash('sha256').update(JSON.stringify({documents,config,items})+sources.join('')).digest('hex').slice(0,12);
-for(const doc of documents)doc.href+='?v='+doc.fileVersion;
-for(let i=0;i<names.length;i++){let text=sources[i];for(const asset of ['navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','documents.json','config.json'])text=text.replaceAll('./'+asset,'./'+asset+'?v='+version);await fs.writeFile('public/'+names[i],text);}
+for(const doc of documents)if(doc.storage!=='chunked')doc.href+='?v='+doc.fileVersion;
+for(let i=0;i<names.length;i++){let text=sources[i];for(const asset of ['navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','large-files.mjs','documents.json','config.json'])text=text.replaceAll('./'+asset,'./'+asset+'?v='+version);await fs.writeFile('public/'+names[i],text);}
 await fs.writeFile('public/documents.json',JSON.stringify({documents}));
 await fs.writeFile('public/config.json',JSON.stringify(config));
 await fs.writeFile('public/.nojekyll','');
