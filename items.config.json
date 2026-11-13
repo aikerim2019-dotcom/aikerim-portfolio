@@ -150,5 +150,14 @@
   "student-learning-library": {
     "section": "learning",
     "title": "Студенттің оқу қоржыны — сабақ материалдары"
+  },
+  "custom-students-mweq9shd-ffc31b77": {
+    "section": "students",
+    "title": "Диплом  ІІ орын",
+    "subtitle": "Қабылтай Аружан, Кужасова Лиза",
+    "description": "\"Вакцинация детского населения\" за участие в Руспубликанском конкурсе электронных постеров. Петропавлоск г.",
+    "year": "2022",
+    "custom": true,
+    "createdAt": "2026-11-13T08:41:38.161Z"
   }
 }
