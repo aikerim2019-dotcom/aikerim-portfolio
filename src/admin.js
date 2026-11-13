@@ -3,6 +3,14 @@
  const $=s=>document.querySelector(s),types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'};
  let token='',config=null,records=[],itemMap={},metadata={},pendingAction=null,uploadItem=null,uploadKind='files',uploadBusy=false,deleteBusy=false,deleteDoc=null,live=false,cardBusy=false,newCardSection=null;
  const fileCache=new Map();
+ let ownerLogin='',accessBusy=false,personalBusy=false;
+ const vaultKey='portfolio-personal-vault:v1:'+location.pathname.replace(/\/+$/,'');
+ function loadVault(){try{const raw=localStorage.getItem(vaultKey);return raw&&raw.length<15000?JSON.parse(raw):null;}catch{return null;}}
+ function saveVault(record){try{localStorage.setItem(vaultKey,JSON.stringify(record));}catch{throw Error('Браузер сақтауға рұқсат бермеді. Баптауын тексеріңіз.');}}
+ async function vaultModule(){return import(document.querySelector('script[src*="vault.mjs"]').src);}
+ const vaultScope=()=>location.origin+'|'+config.repository;
+ function personalUI(){const exists=!!loadVault();$('#personal-login-pane').hidden=!exists;$('#personal-first-setup-note').hidden=exists;$('#github-access-panel').open=!exists;$('#personal-settings-button').textContent=exists?'Құпиясөзді өзгерту':'Өз құпиясөзімді орнату';}
+
  const text=(id,message)=>{$(id).textContent=message;};
  const report=message=>text('#admin-global-message',message);
  const from64=value=>new TextDecoder().decode(Uint8Array.from(atob(value.replace(/\s/g,'')),c=>c.charCodeAt(0)));
@@ -10,7 +18,7 @@
  const encodePath=value=>value.split('/').map(encodeURIComponent).join('/');
  function validPath(id){if(typeof id!=='string'||id.split('/').some(p=>!p||p==='.'||p==='..')||/[\\\x00-\x1f]/.test(id))throw Error('Файл жолы жарамсыз.');return 'documents/'+id;}
  async function settings(){if(!config){const r=await fetch('./config.json');if(!r.ok)throw Error('Сайт баптауы ашылмады.');config=await r.json();if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository||''))throw Error('Сайт баптауы жарамсыз.');}return config;}
- function connectionUI(login=''){$('#admin-login-button').hidden=!!token;$('#admin-logout-button').hidden=!token;$('#admin-refresh-button').hidden=!token;$('#admin-logout-button').disabled=uploadBusy||deleteBusy||cardBusy;text('#admin-connection-status',token?'Басқару қосулы: '+login:'Файлдарды қосу немесе жою үшін басқаруға кіріңіз.');}
+ function connectionUI(login=''){if(!token)ownerLogin='';else if(login)ownerLogin=login;$('#admin-login-button').hidden=!!token;$('#admin-logout-button').hidden=!token;$('#admin-refresh-button').hidden=!token;$('#personal-settings-button').hidden=!token||!ownerLogin;$('#admin-logout-button').disabled=uploadBusy||deleteBusy||cardBusy;text('#admin-connection-status',token?'Басқару қосулы: '+ownerLogin:'Файлдарды қосу немесе жою үшін басқаруға кіріңіз.');personalUI();}
  async function api(path,options={}){
   if(!path.startsWith('/'))throw Error('Сұрау жолы жарамсыз.');
   const headers={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(token?{Authorization:'Bearer '+token}:{}),...(options.body?{'Content-Type':'application/json'}:{})};
@@ -39,7 +47,7 @@
   if(tree.truncated)throw Error('Файлдар тізімі толық алынбады. Қайта жаңартыңыз.');itemMap=JSON.parse(from64(map.content));metadata=JSON.parse(from64(meta.content));document.dispatchEvent(new CustomEvent('portfolio-items-changed',{detail:itemMap}));
   const entries=tree.tree.filter(x=>x.type==='blob'&&x.path.startsWith('documents/')),docs=entries.filter(x=>types[x.path.split('.').pop().toLowerCase()]).map(x=>descriptor(x.path,x.sha,x.size));for(const entry of entries.filter(x=>x.path.endsWith('.portfolio-file.json')))docs.push(largeDescriptor(entry.path,entry.sha,await readManifest(entry.sha)));docs.sort((a,b)=>b.year.localeCompare(a.year)||a.title.localeCompare(b.title));live=true;publish(docs);return docs;
  }
- function requireAccess(action){if(token){action();return;}pendingAction=action;text('#admin-access-message','');$('#admin-access-dialog').showModal();$('#admin-token').focus();}
+ function requireAccess(action){if(token){action();return;}pendingAction=action;personalUI();text('#admin-access-message','');text('#personal-login-message','');$('#admin-access-dialog').showModal();$(loadVault()?'#personal-login-password':'#admin-token').focus();}
  function upload(item,kind='files'){
   requireAccess(()=>{if(!document.querySelector('[data-item-id="'+CSS.escape(item)+'"]'))return;if(itemMap[item]?.section)window.PortfolioNavigation?.show(itemMap[item].section);uploadItem=item;uploadKind=kind==='photos'?'photos':'files';$('#admin-upload-form').reset();$('#admin-selected-files').replaceChildren();text('#admin-upload-message','');text('#admin-upload-item',itemMap[item]?.title||'Осы ұяшыққа қосу');$('#admin-files').accept=uploadKind==='photos'?'.jpg,.jpeg,.png,.webp,.gif':'.pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif';$('#admin-upload-dialog').showModal();});
  }
@@ -58,16 +66,43 @@
    const url=await fileUrl(doc),a=document.createElement('a');a.href=url;a.download=doc.name;document.body.append(a);a.click();a.remove();report('«'+doc.name+'» файлын жүктеу басталды.');
   }catch(e){if(writable)try{await writable.abort();}catch{}if(e.name!=='AbortError')report(e.message);}
  }
+ async function authorize(candidate){await settings();token=candidate;const [user,repo]=await Promise.all([api('/user'),api(repoPath())]);if(user.login.toLowerCase()!==config.repository.split('/')[0].toLowerCase()||repo.permissions?.push!==true)throw Error('Бұл аккаунтқа портфолионы басқаруға рұқсат жоқ.');await snapshot();connectionUI(user.login);}
+ function finishLogin(){$('#admin-access-dialog').close();report('Басқару қосылды. Құжаттарды осы беттен қосып, жоя аласыз.');const action=pendingAction;pendingAction=null;action?.();}
+ function accessLock(busy){accessBusy=busy;for(const id of ['admin-connect-submit','admin-access-close','personal-login-submit','personal-login-close','personal-forgot-button'])$('#'+id).disabled=busy;}
  $('#admin-login-button').onclick=()=>requireAccess(()=>{});
- $('#admin-access-close').onclick=()=>{pendingAction=null;$('#admin-token').value='';$('#admin-access-dialog').close();};
- $('#admin-access-dialog').addEventListener('close',()=>{$('#admin-token').value='';});
- $('#admin-access-dialog').addEventListener('cancel',event=>{if($('#admin-connect-submit').disabled)event.preventDefault();else pendingAction=null;});
+ for(const id of ['admin-access-close','personal-login-close'])$('#'+id).onclick=()=>{if(accessBusy)return;pendingAction=null;$('#admin-access-dialog').close();};
+ $('#admin-access-dialog').addEventListener('close',()=>{$('#admin-token').value='';$('#personal-login-password').value='';});
+ $('#admin-access-dialog').addEventListener('cancel',event=>{if(accessBusy)event.preventDefault();else pendingAction=null;});
  $('#admin-access-form').onsubmit=async event=>{
-  event.preventDefault();const candidate=$('#admin-token').value.trim();$('#admin-token').value='';const submit=$('#admin-connect-submit');submit.disabled=true;$('#admin-access-close').disabled=true;text('#admin-access-message','Құқықтар тексерілуде…');
-  try{await settings();token=candidate;const [user,repo]=await Promise.all([api('/user'),api(repoPath())]);if(user.login.toLowerCase()!==config.repository.split('/')[0].toLowerCase()||repo.permissions?.push!==true)throw Error('Бұл аккаунтқа портфолионы басқаруға рұқсат жоқ.');await snapshot();connectionUI(user.login);$('#admin-access-dialog').close();report('Басқару қосылды. Құжаттарды осы беттен қосып, жоя аласыз.');const action=pendingAction;pendingAction=null;action?.();}
-  catch(e){token='';connectionUI();text('#admin-access-message',e.message);}finally{submit.disabled=false;$('#admin-access-close').disabled=false;}
+  event.preventDefault();if(accessBusy)return;const candidate=$('#admin-token').value.trim();$('#admin-token').value='';accessLock(true);text('#admin-access-message','Құқықтар тексерілуде…');
+  try{await authorize(candidate);finishLogin();}catch(e){token='';connectionUI();$('#github-access-panel').open=true;text('#admin-access-message',e.message);}finally{accessLock(false);}
  };
- $('#admin-logout-button').onclick=()=>{if(uploadBusy||deleteBusy||cardBusy)return;token='';pendingAction=null;connectionUI();report('Басқарудан шықтыңыз.');};
+ $('#personal-login-form').onsubmit=async event=>{
+  event.preventDefault();if(accessBusy)return;const password=$('#personal-login-password').value;$('#personal-login-password').value='';accessLock(true);text('#personal-login-message','Кіру тексерілуде…');
+  try{await settings();const module=await vaultModule();await authorize(await module.unlock(loadVault(),password,vaultScope()));finishLogin();}catch(e){token='';connectionUI();text('#personal-login-message',e.message);}finally{accessLock(false);}
+ };
+ $('#admin-logout-button').onclick=()=>{if(uploadBusy||deleteBusy||cardBusy||personalBusy)return;token='';pendingAction=null;connectionUI();report('Басқарудан шықтыңыз.');};
+ function showCode(code){$('#personal-recovery-code').value=code;text('#personal-code-message','Жаңа кодты сақтап алыңыз. Бұрынғы код енді жарамайды.');$('#personal-code-dialog').showModal();}
+ function matchingPassword(first,second){const password=$(first).value;if(password!==$(second).value)throw Error('Екі құпиясөз сәйкес келмейді.');if(password.length<10||password.length>128)throw Error('Құпиясөз 10–128 таңбадан тұруы керек.');return password;}
+ function personalLock(busy){personalBusy=busy;for(const id of ['personal-settings-save','personal-settings-close','personal-recovery-save','personal-recovery-close','personal-no-recovery'])$('#'+id).disabled=busy;$('#admin-logout-button').disabled=busy||uploadBusy||deleteBusy||cardBusy;}
+ $('#personal-settings-button').onclick=()=>{if(personalBusy||uploadBusy||deleteBusy||cardBusy)return;requireAccess(()=>{if(!ownerLogin)return;$('#personal-settings-form').reset();text('#personal-settings-message','');$('#personal-settings-dialog').showModal();$('#personal-new-password').focus();});};
+ $('#personal-settings-form').onsubmit=async event=>{
+  event.preventDefault();if(personalBusy||!token||!ownerLogin)return;let password;try{password=matchingPassword('#personal-new-password','#personal-confirm-password');}catch(e){text('#personal-settings-message',e.message);return;}personalLock(true);text('#personal-settings-message','Құпиясөз сақталуда…');
+  try{const module=await vaultModule(),result=await module.seal(token,password,vaultScope());if(!token||!ownerLogin)throw Error('Қайта кіріңіз.');saveVault(result.record);personalUI();$('#personal-settings-dialog').close();showCode(result.recoveryCode);report('Жеке құпиясөз сақталды. Келесі жолы осы құпиясөзбен кіріңіз.');}catch(e){text('#personal-settings-message',e.message);}finally{personalLock(false);}
+ };
+ $('#personal-forgot-button').onclick=()=>{if(accessBusy)return;$('#admin-access-dialog').close();$('#personal-recovery-form').reset();text('#personal-recovery-message','');$('#personal-recovery-dialog').showModal();$('#personal-recovery-input').focus();};
+ $('#personal-recovery-form').onsubmit=async event=>{
+  event.preventDefault();if(personalBusy)return;let password;try{password=matchingPassword('#personal-reset-password','#personal-reset-confirm');}catch(e){text('#personal-recovery-message',e.message);return;}const code=$('#personal-recovery-input').value;personalLock(true);text('#personal-recovery-message','Құпиясөз ауыстырылуда…');
+  try{await settings();const module=await vaultModule(),result=await module.reset(loadVault(),code,password,vaultScope());saveVault(result.record);personalUI();$('#personal-recovery-dialog').close();showCode(result.recoveryCode);report('Құпиясөз ауыстырылды. Енді жаңа құпиясөзбен кіріңіз.');}catch(e){text('#personal-recovery-message',e.message);}finally{personalLock(false);}
+ };
+ for(const kind of ['settings','recovery']){const dialog=$('#personal-'+kind+'-dialog');$('#personal-'+kind+'-close').onclick=()=>{if(!personalBusy)dialog.close();};dialog.addEventListener('cancel',event=>{if(personalBusy)event.preventDefault();});dialog.addEventListener('close',()=>$('#personal-'+kind+'-form').reset());}
+ $('#personal-no-recovery').onclick=()=>{if(personalBusy)return;$('#personal-recovery-dialog').close();requireAccess(pendingAction||(()=>{}));$('#github-access-panel').open=true;$('#admin-token').focus();};
+ $('#personal-code-close').onclick=()=>$('#personal-code-dialog').close();
+ $('#personal-code-dialog').addEventListener('close',()=>{$('#personal-recovery-code').value='';});
+ $('#personal-copy-code').onclick=async()=>{try{await navigator.clipboard.writeText($('#personal-recovery-code').value);text('#personal-code-message','Код көшірілді. Қауіпсіз жерге сақтаңыз.');}catch{text('#personal-code-message','Кодты таңдап, қолмен көшіріңіз.');$('#personal-recovery-code').select();}};
+ $('#personal-download-code').onclick=()=>{const url=URL.createObjectURL(new Blob(['Портфолио: '+location.origin+location.pathname+'\nҚалпына келтіру коды: '+$('#personal-recovery-code').value+'\nБұл кодты ешкімге бермеңіз.'],{type:'text/plain;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download='portfolio-recovery-code.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+ window.addEventListener('storage',event=>{if(event.key===vaultKey){token='';connectionUI();report('Кіру баптауы басқа терезеде өзгерді. Қайта кіріңіз.');}});
+ personalUI();
  $('#admin-refresh-button').onclick=async()=>{if(!token||uploadBusy||deleteBusy||cardBusy)return;const b=$('#admin-refresh-button');b.disabled=true;try{await snapshot();report('Файлдар тізімі жаңартылды.');}catch(e){report(e.message);}finally{b.disabled=false;}};
  $('#admin-files').onchange=()=>{const list=$('#admin-selected-files');list.replaceChildren();for(const file of $('#admin-files').files){const li=document.createElement('li');li.textContent=file.name+' · '+(file.size/1024/1024).toFixed(2)+' МБ';list.append(li);}};
  $('#admin-upload-close').onclick=()=>{if(!uploadBusy)$('#admin-upload-dialog').close();};
