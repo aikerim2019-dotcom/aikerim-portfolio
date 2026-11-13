@@ -6,6 +6,7 @@ export function createPreview(container){
  let disposed=false,pdf=null,loading=null,renderTask=null,pageNumber=1,renderVersion=0,image=null,zoom=1;
  const toolbar=make('div','portfolio-preview-toolbar'),previous=make('button','','←'),label=make('span'),next=make('button','','→'),smaller=make('button','','−'),bigger=make('button','','＋'),stage=make('div','portfolio-preview-stage'),status=make('p','portfolio-preview-status','Құжат ашылуда…');
  for(const [button,title] of [[previous,'Алдыңғы бет'],[next,'Келесі бет'],[smaller,'Кішірейту'],[bigger,'Үлкейту']]){button.type='button';button.setAttribute('aria-label',title);}
+ stage.addEventListener('contextmenu',event=>event.preventDefault());stage.addEventListener('dragstart',event=>event.preventDefault());
  status.setAttribute('role','status');toolbar.append(previous,label,next,smaller,bigger);container.replaceChildren(toolbar,status,stage);toolbar.hidden=true;
  async function draw(){
   const version=++renderVersion;renderTask?.cancel();renderTask=null;
