@@ -36,7 +36,7 @@
  }
  function requireAccess(action){if(token){action();return;}pendingAction=action;text('#admin-access-message','');$('#admin-access-dialog').showModal();$('#admin-token').focus();}
  function upload(item,kind='files'){
-  requireAccess(()=>{if(!document.querySelector('[data-item-id="'+CSS.escape(item)+'"]'))return;uploadItem=item;uploadKind=kind==='photos'?'photos':'files';$('#admin-upload-form').reset();$('#admin-selected-files').replaceChildren();text('#admin-upload-message','');text('#admin-upload-item',itemMap[item]?.title||'Осы ұяшыққа қосу');$('#admin-files').accept=uploadKind==='photos'?'.jpg,.jpeg,.png,.webp,.gif':'.pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif';$('#admin-upload-dialog').showModal();});
+  requireAccess(()=>{if(!document.querySelector('[data-item-id="'+CSS.escape(item)+'"]'))return;if(itemMap[item]?.section)window.PortfolioNavigation?.show(itemMap[item].section);uploadItem=item;uploadKind=kind==='photos'?'photos':'files';$('#admin-upload-form').reset();$('#admin-selected-files').replaceChildren();text('#admin-upload-message','');text('#admin-upload-item',itemMap[item]?.title||'Осы ұяшыққа қосу');$('#admin-files').accept=uploadKind==='photos'?'.jpg,.jpeg,.png,.webp,.gif':'.pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif';$('#admin-upload-dialog').showModal();});
  }
  function remove(doc){requireAccess(()=>{const current=currentRecords().find(x=>x.id===doc.id);if(!current){report('Бұл файл бұрын жойылған.');return;}deleteDoc=current;text('#file-delete-name',current.name);text('#file-delete-help','Осы файлды біржола жоясыз ба? Қалған файлдар сақталады.');$('#file-delete-dialog').showModal();});}
  async function fileUrl(doc){
@@ -84,7 +84,7 @@
  };
 
  const cardSections={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',learning:'Студенттің оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
- function createCard(section){if(!cardSections[section])return;requireAccess(()=>{newCardSection=section;$('#new-card-form').reset();text('#new-card-section',cardSections[section]+' бөлімі');text('#new-card-subtitle-label',section==='students'?'Студенттің аты-жөні (міндетті емес)':'Қосымша атау (міндетті емес)');text('#new-card-message','');$('#new-card-dialog').showModal();$('#new-card-name').focus();});}
+ function createCard(section){if(!cardSections[section])return;requireAccess(()=>{window.PortfolioNavigation?.show(section);newCardSection=section;$('#new-card-form').reset();text('#new-card-section',cardSections[section]+' бөлімі');text('#new-card-subtitle-label',section==='students'?'Студенттің аты-жөні (міндетті емес)':'Қосымша атау (міндетті емес)');text('#new-card-message','');$('#new-card-dialog').showModal();$('#new-card-name').focus();});}
  for(const button of document.querySelectorAll('[data-section-add]'))button.onclick=()=>createCard(button.dataset.sectionAdd);
  $('#new-card-cancel').onclick=()=>{if(!cardBusy)$('#new-card-dialog').close();};
  $('#new-card-dialog').addEventListener('cancel',event=>{if(cardBusy)event.preventDefault();});
@@ -100,6 +100,6 @@
   }catch(e){text('#new-card-message',e.message);}finally{cardBusy=false;$('#new-card-save').disabled=false;$('#new-card-cancel').disabled=false;$('#admin-logout-button').disabled=false;}
  };
 
- window.PortfolioAdmin={createCard,upload,remove,fileUrl,download,thumbnail:doc=>fileCache.get(doc.id+':'+doc.sha)||doc.href,manage:item=>requireAccess(()=>{report('Осы ұяшықтағы әр файлдың «Жою» батырмасын пайдаланыңыз немесе жаңа файлдар қосыңыз.');document.querySelector('[data-item-id="'+CSS.escape(item)+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});}),get itemDefinitions(){return itemMap;},get hasLiveData(){return live;},get connected(){return !!token;}};
+ window.PortfolioAdmin={createCard,upload,remove,fileUrl,download,thumbnail:doc=>fileCache.get(doc.id+':'+doc.sha)||doc.href,manage:item=>requireAccess(()=>{if(itemMap[item]?.section)window.PortfolioNavigation?.show(itemMap[item].section);report('Осы ұяшықтағы әр файлдың «Жою» батырмасын пайдаланыңыз немесе жаңа файлдар қосыңыз.');document.querySelector('[data-item-id="'+CSS.escape(item)+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});}),get itemDefinitions(){return itemMap;},get hasLiveData(){return live;},get connected(){return !!token;}};
  window.addEventListener('beforeunload',()=>{token='';for(const url of fileCache.values())URL.revokeObjectURL(url);fileCache.clear();});
 })();
