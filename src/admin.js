@@ -1,0 +1,87 @@
+(()=>{
+ 'use strict';
+ const $=s=>document.querySelector(s),types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'};
+ let token='',config=null,records=[],itemMap={},metadata={},pendingAction=null,uploadItem=null,uploadKind='files',uploadBusy=false,deleteBusy=false,deleteDoc=null,live=false;
+ const fileCache=new Map();
+ const text=(id,message)=>{$(id).textContent=message;};
+ const report=message=>text('#admin-global-message',message);
+ const from64=value=>new TextDecoder().decode(Uint8Array.from(atob(value.replace(/\s/g,'')),c=>c.charCodeAt(0)));
+ const to64=buffer=>{const bytes=new Uint8Array(buffer);let s='';for(let i=0;i<bytes.length;i+=32768)s+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(s);};
+ const encodePath=value=>value.split('/').map(encodeURIComponent).join('/');
+ function validPath(id){if(typeof id!=='string'||id.split('/').some(p=>!p||p==='.'||p==='..')||/[\\\x00-\x1f]/.test(id))throw Error('Файл жолы жарамсыз.');return 'documents/'+id;}
+ async function settings(){if(!config){const r=await fetch('./config.json');if(!r.ok)throw Error('Сайт баптауы ашылмады.');config=await r.json();if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository||''))throw Error('Сайт баптауы жарамсыз.');}return config;}
+ function connectionUI(login=''){$('#admin-login-button').hidden=!!token;$('#admin-logout-button').hidden=!token;$('#admin-refresh-button').hidden=!token;$('#admin-logout-button').disabled=uploadBusy||deleteBusy;text('#admin-connection-status',token?'Басқару қосулы: '+login:'Файлдарды қосу немесе жою үшін басқаруға кіріңіз.');}
+ async function api(path,options={}){
+  if(!path.startsWith('/'))throw Error('Сұрау жолы жарамсыз.');
+  const headers={Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(token?{Authorization:'Bearer '+token}:{}),...(options.body?{'Content-Type':'application/json'}:{})};
+  let r;try{r=await fetch('https://api.github.com'+path,{...options,headers,cache:'no-store'});}catch{throw Error('Интернет байланысы үзілді. Қайта көріңіз.');}
+  if(!r.ok){let detail;try{detail=await r.json();}catch{}
+   const e=Error(r.status===401?'Басқару кілті жарамсыз немесе мерзімі біткен. Қайта кіріңіз.':r.status===403?'Бұл кілтке қажетті құқық берілмеген немесе сұрау шегі аяқталған. Contents → Read and write құқығын тексеріңіз.':r.status===409||r.status===422?'Файлдар басқа жерден өзгерген. Тізімді жаңартып, әрекетті қайталаңыз.':r.status===404?'Файл немесе жоба табылмады.':'Сервермен байланыс сәтсіз аяқталды. Қайта көріңіз.');e.status=r.status;if(r.status===401){token='';connectionUI();}throw e;
+  }return r.status===204?null:r.json();
+ }
+ const repoPath=()=>'/repos/'+config.repository;
+ function publish(next){records=next;if(window.setPortfolioDocuments)window.setPortfolioDocuments(next);else document.dispatchEvent(new CustomEvent('portfolio-documents-changed',{detail:next}));}
+ function currentRecords(){return live?records:window.getPortfolioDocuments?.()||[];}
+ function descriptor(path,sha,size){
+  const id=path.slice(10),parts=id.split('/'),name=parts.at(-1),ext=name.split('.').pop().toLowerCase(),m=metadata[id]||{},item=parts[0]==='items'&&itemMap[parts[1]]?parts[1]:itemMap[m.item]?m.item:null;
+  const legacy={certificates:'about',awards:'achievements',materials:'materials',articles:'materials',students:'students',other:'documents'},section=item?itemMap[item].section:parts[0]==='sections'?parts[1]:legacy[parts[0]]||'documents';
+  const sectionTitles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс',learning:'Студенттің оқу қоржыны'},categories={certificates:'Сертификаттар',awards:'Марапаттар',materials:'Әдістемелік материалдар',articles:'Ғылыми мақалалар',students:'Студенттер жетістіктері',other:'Басқа құжаттар'};
+  return {id,sha,live:true,title:m.title||name.replace(/\.[^.]+$/,'').replaceAll('_',' '),description:m.description||'',year:m.year||name.match(/(?:19|20)\d{2}/)?.[0]||'',name,item,itemTitle:item?itemMap[item].title:'',section,sectionTitle:sectionTitles[section]||section,category:categories[parts[0]]||(types[ext]?.startsWith('image/')?'Фотосуреттер':'Басқа құжаттар'),size,type:types[ext],fileVersion:sha,href:'https://raw.githubusercontent.com/'+config.repository+'/'+encodeURIComponent(config.branch)+'/'+encodePath(path)};
+ }
+ async function snapshot(){
+  await settings();const base=repoPath(),ref=encodeURIComponent(config.branch);
+  const [tree,map,meta]=await Promise.all([api(base+'/git/trees/'+ref+'?recursive=1'),api(base+'/contents/items.config.json?ref='+ref),api(base+'/contents/documents.meta.json?ref='+ref)]);
+  if(tree.truncated)throw Error('Файлдар тізімі толық алынбады. Қайта жаңартыңыз.');itemMap=JSON.parse(from64(map.content));metadata=JSON.parse(from64(meta.content));
+  const docs=tree.tree.filter(x=>x.type==='blob'&&x.path.startsWith('documents/')&&types[x.path.split('.').pop().toLowerCase()]).map(x=>descriptor(x.path,x.sha,x.size));docs.sort((a,b)=>b.year.localeCompare(a.year)||a.title.localeCompare(b.title));live=true;publish(docs);return docs;
+ }
+ function requireAccess(action){if(token){action();return;}pendingAction=action;text('#admin-access-message','');$('#admin-access-dialog').showModal();$('#admin-token').focus();}
+ function upload(item,kind='files'){
+  requireAccess(()=>{if(!document.querySelector('[data-item-id="'+CSS.escape(item)+'"]'))return;uploadItem=item;uploadKind=kind==='photos'?'photos':'files';$('#admin-upload-form').reset();$('#admin-selected-files').replaceChildren();text('#admin-upload-message','');text('#admin-upload-item',itemMap[item]?.title||'Осы ұяшыққа қосу');$('#admin-files').accept=uploadKind==='photos'?'.jpg,.jpeg,.png,.webp,.gif':'.pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif';$('#admin-upload-dialog').showModal();});
+ }
+ function remove(doc){requireAccess(()=>{const current=currentRecords().find(x=>x.id===doc.id);if(!current){report('Бұл файл бұрын жойылған.');return;}deleteDoc=current;text('#file-delete-name',current.name);text('#file-delete-help','Осы файлды біржола жоясыз ба? Қалған файлдар сақталады.');$('#file-delete-dialog').showModal();});}
+ async function fileUrl(doc){
+  if(!doc.live)return doc.href;const key=doc.id+':'+doc.sha;if(fileCache.has(key))return fileCache.get(key);await settings();const result=await api(repoPath()+'/git/blobs/'+encodeURIComponent(doc.sha));if(result.encoding!=='base64')throw Error('Файл мазмұны ашылмады.');const bytes=Uint8Array.from(atob(result.content.replace(/\s/g,'')),c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([bytes],{type:doc.type}));fileCache.set(key,url);return url;
+ }
+ async function download(doc,event){if(!doc.live)return;event?.preventDefault();try{const url=await fileUrl(doc),a=document.createElement('a');a.href=url;a.download=doc.name;document.body.append(a);a.click();a.remove();}catch(e){report(e.message);}}
+ $('#admin-login-button').onclick=()=>requireAccess(()=>{});
+ $('#admin-access-close').onclick=()=>{pendingAction=null;$('#admin-token').value='';$('#admin-access-dialog').close();};
+ $('#admin-access-dialog').addEventListener('close',()=>{$('#admin-token').value='';});
+ $('#admin-access-dialog').addEventListener('cancel',event=>{if($('#admin-connect-submit').disabled)event.preventDefault();else pendingAction=null;});
+ $('#admin-access-form').onsubmit=async event=>{
+  event.preventDefault();const candidate=$('#admin-token').value.trim();$('#admin-token').value='';const submit=$('#admin-connect-submit');submit.disabled=true;$('#admin-access-close').disabled=true;text('#admin-access-message','Құқықтар тексерілуде…');
+  try{await settings();token=candidate;const [user,repo]=await Promise.all([api('/user'),api(repoPath())]);if(user.login.toLowerCase()!==config.repository.split('/')[0].toLowerCase()||repo.permissions?.push!==true)throw Error('Бұл аккаунтқа портфолионы басқаруға рұқсат жоқ.');await snapshot();connectionUI(user.login);$('#admin-access-dialog').close();report('Басқару қосылды. Құжаттарды осы беттен қосып, жоя аласыз.');const action=pendingAction;pendingAction=null;action?.();}
+  catch(e){token='';connectionUI();text('#admin-access-message',e.message);}finally{submit.disabled=false;$('#admin-access-close').disabled=false;}
+ };
+ $('#admin-logout-button').onclick=()=>{if(uploadBusy||deleteBusy)return;token='';pendingAction=null;connectionUI();report('Басқарудан шықтыңыз.');};
+ $('#admin-refresh-button').onclick=async()=>{if(!token||uploadBusy||deleteBusy)return;const b=$('#admin-refresh-button');b.disabled=true;try{await snapshot();report('Файлдар тізімі жаңартылды.');}catch(e){report(e.message);}finally{b.disabled=false;}};
+ $('#admin-files').onchange=()=>{const list=$('#admin-selected-files');list.replaceChildren();for(const file of $('#admin-files').files){const li=document.createElement('li');li.textContent=file.name+' · '+(file.size/1024/1024).toFixed(2)+' МБ';list.append(li);}};
+ $('#admin-upload-close').onclick=()=>{if(!uploadBusy)$('#admin-upload-dialog').close();};
+ $('#admin-upload-dialog').addEventListener('cancel',e=>{if(uploadBusy)e.preventDefault();});
+ $('#admin-upload-form').onsubmit=async event=>{
+  event.preventDefault();if(!token||uploadBusy)return;const selected=[...$('#admin-files').files];
+  try{if(!selected.length)throw Error('Бір немесе бірнеше файл таңдаңыз.');if(selected.reduce((n,f)=>n+f.size,0)>100*1024*1024)throw Error('Бір жүктеудегі файлдар көлемі 100 МБ-тан аспауы керек.');for(const f of selected){if(!f.size||f.size>15*1024*1024)throw Error(f.name+': көлемі 15 МБ-тан аспайтын бос емес файл таңдаңыз.');if(!types[f.name.split('.').pop().toLowerCase()]||(uploadKind==='photos'&&!types[f.name.split('.').pop().toLowerCase()].startsWith('image/')))throw Error(f.name+': бұл файл түріне қолдау жоқ.');if(/[\\/\x00-\x1f]/.test(f.name)||new TextEncoder().encode(f.name).length>220)throw Error('Файл атауы жарамсыз немесе тым ұзын.');}}
+  catch(e){text('#admin-upload-message',e.message);return;}
+  uploadBusy=true;$('#admin-upload-submit').disabled=true;$('#admin-upload-close').disabled=true;$('#admin-logout-button').disabled=true;text('#admin-upload-message','Файлдар дайындалуда…');
+  let saved=false;const pendingCacheKeys=[];
+  try{
+   const base=repoPath(),ref=await api(base+'/git/ref/heads/'+encodeURIComponent(config.branch)),commit=await api(base+'/git/commits/'+ref.object.sha),tree=await api(base+'/git/trees/'+commit.tree.sha+'?recursive=1');if(tree.truncated)throw Error('Жоба файлдарының тізімі толық емес.');
+   const used=new Set(tree.tree.map(x=>x.path)),changes=[],newDocs=[];
+   for(let i=0;i<selected.length;i++){
+    const file=selected[i],original=file.name.normalize('NFC'),dot=original.lastIndexOf('.'),stem=original.slice(0,dot),ext=original.slice(dot),folder='documents/items/'+uploadItem+'/'+uploadKind+'/';let name=original,n=2;while(used.has(folder+name))name=stem+' ('+(n++)+')'+ext;const path=folder+name;used.add(path);
+    text('#admin-upload-message',(i+1)+' / '+selected.length+' файл жүктелуде: '+name);const blob=await api(base+'/git/blobs',{method:'POST',body:JSON.stringify({content:to64(await file.arrayBuffer()),encoding:'base64'})});changes.push({path,mode:'100644',type:'blob',sha:blob.sha});const doc=descriptor(path,blob.sha,file.size);newDocs.push(doc);fileCache.set(doc.id+':'+doc.sha,URL.createObjectURL(new Blob([file],{type:doc.type})));pendingCacheKeys.push(doc.id+':'+doc.sha);
+   }
+   const updated=await api(base+'/git/trees',{method:'POST',body:JSON.stringify({base_tree:commit.tree.sha,tree:changes})}),next=await api(base+'/git/commits',{method:'POST',body:JSON.stringify({message:'Add '+selected.length+' portfolio files to '+uploadItem,tree:updated.sha,parents:[ref.object.sha]})});
+   await api(base+'/git/refs/heads/'+encodeURIComponent(config.branch),{method:'PATCH',body:JSON.stringify({sha:next.sha,force:false})});saved=true;publish([...records,...newDocs]);$('#admin-upload-dialog').close();report(selected.length+' файл сақталды және осы ұяшықта көрсетілді. Басқа келушілерге сайт жаңартылған соң көрінеді.');
+  }catch(e){text('#admin-upload-message',saved?'Файлдар сақталды. Тізімді жаңартыңыз.':e.message);}
+  finally{if(!saved)for(const key of pendingCacheKeys){URL.revokeObjectURL(fileCache.get(key));fileCache.delete(key);}uploadBusy=false;$('#admin-upload-submit').disabled=false;$('#admin-upload-close').disabled=false;$('#admin-logout-button').disabled=false;}
+ };
+ $('#file-delete-cancel').onclick=()=>{if(!deleteBusy)$('#file-delete-dialog').close();};
+ $('#file-delete-dialog').addEventListener('cancel',e=>{if(deleteBusy)e.preventDefault();});
+ $('#file-delete-confirm').onclick=async()=>{
+  if(!token||!deleteDoc||deleteBusy)return;deleteBusy=true;$('#file-delete-confirm').disabled=true;$('#file-delete-cancel').disabled=true;$('#admin-logout-button').disabled=true;text('#file-delete-help','Файл жойылуда…');
+  try{const path=validPath(deleteDoc.id),current=await api(repoPath()+'/contents/'+encodePath(path)+'?ref='+encodeURIComponent(config.branch));if(deleteDoc.sha&&current.sha!==deleteDoc.sha)throw Error('Бұл файл өзгерген. Тізімді жаңартып, жоюды қайта растаңыз.');await api(repoPath()+'/contents/'+encodePath(path),{method:'DELETE',body:JSON.stringify({message:'Delete portfolio file '+deleteDoc.name,sha:current.sha,branch:config.branch})});publish(records.filter(x=>x.id!==deleteDoc.id));$('#file-delete-dialog').close();if($('#doc-viewer').open)$('#doc-viewer').close();report('«'+deleteDoc.name+'» файлы жойылды. Қалған файлдар сақталды.');deleteDoc=null;}
+  catch(e){text('#file-delete-help',e.message);}finally{deleteBusy=false;$('#file-delete-confirm').disabled=false;$('#file-delete-cancel').disabled=false;$('#admin-logout-button').disabled=false;}
+ };
+ window.PortfolioAdmin={upload,remove,fileUrl,download,thumbnail:doc=>fileCache.get(doc.id+':'+doc.sha)||doc.href,manage:item=>requireAccess(()=>{report('Осы ұяшықтағы әр файлдың «Жою» батырмасын пайдаланыңыз немесе жаңа файлдар қосыңыз.');document.querySelector('[data-item-id="'+CSS.escape(item)+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});}),get hasLiveData(){return live;},get connected(){return !!token;}};
+ window.addEventListener('beforeunload',()=>{token='';for(const url of fileCache.values())URL.revokeObjectURL(url);fileCache.clear();});
+})();
