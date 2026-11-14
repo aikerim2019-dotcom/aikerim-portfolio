@@ -1,4 +1,4 @@
-export const sectionTitles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',learning:'Студенттің оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
+export const sectionTitles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',projects:'Менің жобаларым',documents:'Құжаттар қоры',learning:'Студенттің оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function cardMarkup(id,card){
  if(!/^custom-[a-z0-9-]+$/.test(id)||!sectionTitles[card.section])return '';
@@ -19,3 +19,4 @@ if(typeof window!=='undefined'){
  document.addEventListener('portfolio-items-changed',event=>sync(event.detail));
  const existing=window.PortfolioAdmin?.itemDefinitions;if(existing&&Object.keys(existing).length)sync(existing);
 }
+

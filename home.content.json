@@ -4,10 +4,11 @@
   "intro": "Дәрігер-педиатр, Батыс Қазақстан жоғары медициналық колледжінің арнайы пән оқытушысы. Тәжірибелік медицина мен цифрлық оқыту технологияларын ұштастыра отырып, білікті медицина мамандарын даярлаушы.",
   "materials": "Әдістемелік қор",
   "contact": "Байланысу",
-  "experienceValue": "6",
-  "experienceLabel": "Жалпы еңбек өтілі",
-  "teachingValue": "4",
-  "teachingLabel": "Педагогикалық өтілі",
-  "trainingValue": "BLS/PALS/ACLS/PHTLS",
-  "trainingLabel": "Халықаралық тренингтер"
+  "experienceValue": "AI",
+  "experienceLabel": "Білім берудегі жасанды интеллект",
+  "teachingValue": "BLS",
+  "teachingLabel": "Халықаралық тренер",
+  "trainingValue": "SIM",
+  "trainingLabel": "Симуляциялық оқыту",
+  "projects": "Менің жобаларым"
 }

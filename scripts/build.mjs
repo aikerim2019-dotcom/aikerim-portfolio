@@ -9,7 +9,7 @@ import {normalizeManifest,MANIFEST_SUFFIX,SITE_BYTES} from '../src/large-files.m
 const config=JSON.parse(await fs.readFile('site.config.json','utf8'));
 const meta=JSON.parse(await fs.readFile('documents.meta.json','utf8'));
 const items=JSON.parse(await fs.readFile('items.config.json','utf8'));
-const sections={learning:'Студенттің оқу қоржыны',home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
+const sections={learning:'Студенттің оқу қоржыны',home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',projects:'Менің жобаларым',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
 const cats={certificates:'Сертификаттар',awards:'Марапаттар',materials:'Әдістемелік материалдар',articles:'Ғылыми мақалалар',students:'Студенттер жетістіктері',other:'Басқа құжаттар'};
 const legacySections={certificates:'about',awards:'achievements',materials:'materials',articles:'materials',students:'students',other:'documents'};
 const types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',gif:'image/gif'};
@@ -57,3 +57,4 @@ await fs.writeFile('public/documents.json',JSON.stringify({documents}));
 await fs.writeFile('public/config.json',JSON.stringify(config));
 await fs.writeFile('public/.nojekyll','');
 console.log('Built portfolio with '+documents.length+' documents and individual card attachments.');
+

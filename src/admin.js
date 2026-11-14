@@ -38,7 +38,7 @@
  function descriptor(path,sha,size){
   const id=path.slice(10),parts=id.split('/'),name=parts.at(-1),ext=name.split('.').pop().toLowerCase(),m=metadata[id]||{},item=parts[0]==='items'&&itemMap[parts[1]]?parts[1]:itemMap[m.item]?m.item:null;
   const legacy={certificates:'about',awards:'achievements',materials:'materials',articles:'materials',students:'students',other:'documents'},section=item?itemMap[item].section:parts[0]==='sections'?parts[1]:legacy[parts[0]]||'documents';
-  const sectionTitles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс',learning:'Студенттің оқу қоржыны'},categories={certificates:'Сертификаттар',awards:'Марапаттар',materials:'Әдістемелік материалдар',articles:'Ғылыми мақалалар',students:'Студенттер жетістіктері',other:'Басқа құжаттар'};
+  const sectionTitles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',projects:'Менің жобаларым',documents:'Құжаттар қоры',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс',learning:'Студенттің оқу қоржыны'},categories={certificates:'Сертификаттар',awards:'Марапаттар',materials:'Әдістемелік материалдар',articles:'Ғылыми мақалалар',students:'Студенттер жетістіктері',other:'Басқа құжаттар'};
   return {id,sha,live:true,title:m.title||name.replace(/\.[^.]+$/,'').replaceAll('_',' '),description:m.description||'',year:m.year||name.match(/(?:19|20)\d{2}/)?.[0]||'',name,item,itemTitle:item?itemMap[item].title:'',section,sectionTitle:sectionTitles[section]||section,category:categories[parts[0]]||(types[ext]?.startsWith('image/')?'Фотосуреттер':'Басқа құжаттар'),size,type:types[ext],fileVersion:sha};
  }
  function largeDescriptor(path,sha,manifest){const base=descriptor(path,sha,manifest.size),m=metadata[base.id]||{};return {...base,storage:'chunked',name:manifest.name,title:m.title||manifest.name.replace(/\.[^.]+$/,'').replaceAll('_',' '),size:manifest.size,type:manifest.type,parts:manifest.parts,href:'#'};}
@@ -148,7 +148,7 @@
   catch(e){text('#file-delete-help',e.message);}finally{deleteBusy=false;$('#file-delete-confirm').disabled=false;$('#file-delete-cancel').disabled=false;$('#admin-logout-button').disabled=false;}
  };
 
- const cardSections={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',documents:'Құжаттар қоры',learning:'Студенттің оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
+ const cardSections={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',projects:'Менің жобаларым',documents:'Құжаттар қоры',learning:'Студенттің оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістіктері',contact:'Байланыс'};
  function createCard(section){if(!cardSections[section])return;requireAccess(()=>{window.PortfolioNavigation?.show(section);newCardSection=section;$('#new-card-form').reset();text('#new-card-section',cardSections[section]+' бөлімі');text('#new-card-subtitle-label',section==='students'?'Студенттің аты-жөні (міндетті емес)':'Қосымша атау (міндетті емес)');text('#new-card-message','');$('#new-card-dialog').showModal();$('#new-card-name').focus();});}
  for(const button of document.querySelectorAll('[data-section-add]'))button.onclick=()=>createCard(button.dataset.sectionAdd);
  $('#new-card-cancel').onclick=()=>{if(!cardBusy)$('#new-card-dialog').close();};
@@ -187,3 +187,4 @@
  window.PortfolioAdmin={createCard,upload,remove,fileUrl,download,thumbnail:doc=>ownerConnected()?fileCache.get(doc.id+':'+doc.sha):undefined,manage:item=>requireAccess(()=>{if(itemMap[item]?.section)window.PortfolioNavigation?.show(itemMap[item].section);report('Осы ұяшықтағы әр файлдың «Жою» батырмасын пайдаланыңыз немесе жаңа файлдар қосыңыз.');document.querySelector('[data-item-id="'+CSS.escape(item)+'"]')?.scrollIntoView({behavior:'smooth',block:'center'});}),get itemDefinitions(){return itemMap;},get hasLiveData(){return live;},get connected(){return ownerConnected();}};
  window.addEventListener('beforeunload',()=>{token='';for(const url of fileCache.values())URL.revokeObjectURL(url);fileCache.clear();});
 })();
+

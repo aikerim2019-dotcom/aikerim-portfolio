@@ -1,5 +1,5 @@
 (()=>{
- const titles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',learning:'Оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістігі',documents:'Құжаттар қоры',contact:'Байланыс'};
+ const titles={home:'Басты бет',about:'Мен туралы',experience:'Педагогикалық тәжірибе',materials:'Әдістемелік қор',projects:'Менің жобаларым',learning:'Оқу қоржыны',achievements:'Жетістіктер',students:'Студенттер жетістігі',documents:'Құжаттар қоры',contact:'Байланыс'};
  const sections=[...document.querySelectorAll('[data-portfolio-view]')],main=document.querySelector('#portfolio-main'),menu=document.querySelector('#mobile-menu'),toggle=document.querySelector('#mobile-menu-btn'),originalTitle=document.title;
  let active=null;
  function fromHash(){try{const id=decodeURIComponent(location.hash.slice(1));return titles[id]?id:'home';}catch{return 'home';}}
@@ -25,3 +25,4 @@
  show(fromHash(),{historyMode:'replace',focus:false});
  window.addEventListener('load',()=>window.scrollTo({top:0,behavior:'instant'}),{once:true});
 })();
+
