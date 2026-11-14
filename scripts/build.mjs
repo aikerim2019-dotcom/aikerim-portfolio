@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import os from 'node:os';
 import {officePreview,isOffice} from './office-preview.mjs';
+import {renderHome} from '../src/home-content.mjs';
 import {cardMarkup} from '../src/cards.mjs';
 import {normalizeManifest,MANIFEST_SUFFIX,SITE_BYTES} from '../src/large-files.mjs';
 const config=JSON.parse(await fs.readFile('site.config.json','utf8'));
@@ -43,13 +44,14 @@ async function walk(dir){
 await walk('documents');
 if(publishedBytes>SITE_BYTES)throw Error('Site file storage capacity exceeded.');
 documents.sort((a,b)=>b.year.localeCompare(a.year)||a.title.localeCompare(b.title));
-const names=['index.html','navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','large-files.mjs','vault.mjs','preview.mjs'];
+const names=['index.html','navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','large-files.mjs','vault.mjs','preview.mjs','home-content.mjs'];
 const sources=await Promise.all(names.map(name=>fs.readFile('src/'+name,'utf8')));
 sources[0]=sources[0].replace(/<!--CUSTOM_CARDS:([a-z]+)-->/g,(_,section)=>Object.entries(items).filter(([id,card])=>card.custom&&card.section===section).map(([id,card])=>cardMarkup(id,card)).join(''));
+sources[0]=renderHome(sources[0],JSON.parse(await fs.readFile('home.content.json','utf8')));
 const version=createHash('sha256').update(JSON.stringify({documents,config,items})+sources.join('')).digest('hex').slice(0,12);
 for(const doc of documents)if(doc.storage!=='chunked')doc.href+='?v='+doc.fileVersion;
 const portrait=documents.find(d=>d.item==='profile-photo'&&d.type.startsWith('image/')&&d.storage!=='chunked');if(portrait){const escaped=portrait.href.replaceAll('&','&amp;').replaceAll('\"','&quot;');sources[0]=sources[0].replace('<img id=\"profile-photo\" hidden','<img id=\"profile-photo\" src=\"'+escaped+'\"').replace('<div id=\"profile-placeholder\"','<div id=\"profile-placeholder\" hidden');}
-for(let i=0;i<names.length;i++){let text=sources[i];for(const asset of ['navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','large-files.mjs','vault.mjs','preview.mjs','documents.json','config.json'])text=text.replaceAll('./'+asset,'./'+asset+'?v='+version);await fs.writeFile('public/'+names[i],text);}
+for(let i=0;i<names.length;i++){let text=sources[i];for(const asset of ['navigation.js','admin.js','library.js','items.js','cards.mjs','contact.js','large-files.mjs','vault.mjs','preview.mjs','home-content.mjs','documents.json','config.json'])text=text.replaceAll('./'+asset,'./'+asset+'?v='+version);await fs.writeFile('public/'+names[i],text);}
 await fs.cp('src/vendor','public/vendor',{recursive:true});
 await fs.writeFile('public/documents.json',JSON.stringify({documents}));
 await fs.writeFile('public/config.json',JSON.stringify(config));

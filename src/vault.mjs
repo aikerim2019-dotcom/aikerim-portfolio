@@ -20,3 +20,9 @@ export async function seal(token,password,scope){
 }
 export async function unlock(record,password,scope){const master=await masterFrom(record,password,'password',scope);try{return await tokenFrom(record,master,scope);}finally{master.fill(0);}}
 export async function reset(record,code,password,scope){passwordOK(password);const master=await masterFrom(record,recoveryValue(code),'recovery',scope);try{return await seal(await tokenFrom(record,master,scope),password,scope);}finally{master.fill(0);}}
+// Replace only the encrypted GitHub token; retain password and recovery wrappers.
+export async function rebind(record,password,token,scope){
+ if(typeof token!=='string'||!token||token.length>4096)throw Error('Жаңа GitHub кілтін енгізіңіз.');
+ const master=await masterFrom(record,password,'password',scope);
+ try{return {...record,data:await encrypt(await aes(master),encode(token),scope+'|token')};}finally{master.fill(0);}
+}
