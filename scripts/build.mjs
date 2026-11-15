@@ -58,3 +58,5 @@ await fs.writeFile('public/config.json',JSON.stringify(config));
 await fs.writeFile('public/.nojekyll','');
 console.log('Built portfolio with '+documents.length+' documents and individual card attachments.');
 
+
+await fs.cp('medlab','public/medlab',{recursive:true});
